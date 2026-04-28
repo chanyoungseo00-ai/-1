@@ -16,12 +16,11 @@ st.info("""
 """)
 
 def load_and_standardize_data(file, sheet_name):
-    # 1. 엑셀 데이터를 헤더 없이 불러옵니다.
+    # 엑셀 데이터를 헤더 없이 불러옵니다.
     df = pd.read_excel(file, sheet_name=sheet_name, skiprows=2, header=None)
     
-    # 2. 열(칸) 개수를 세어 2일차인지 3일차인지 자동 판단
+    # 열(칸) 개수를 세어 2일차인지 3일차인지 자동 판단
     if df.shape[1] >= 17:
-        # [3일차 엑셀인 경우]
         df = df.iloc[:, :17].copy()
         df.columns = [
             '일시', '조', '타순', '소속', '이름', 
@@ -31,7 +30,6 @@ def load_and_standardize_data(file, sheet_name):
             '최종_총타수', '최종_2타수', '최종_홀인원'
         ]
     elif df.shape[1] >= 14:
-        # [2일차 엑셀인 경우]
         df = df.iloc[:, :14].copy()
         df.columns = [
             '일시', '조', '타순', '소속', '이름', 
@@ -39,16 +37,16 @@ def load_and_standardize_data(file, sheet_name):
             '2일차_총타수', '2일차_2타수', '2일차_홀인원', 
             '최종_총타수', '최종_2타수', '최종_홀인원'
         ]
-        # 계산 오류를 막기 위해 3일차 칸을 0으로 투명하게 만들어줍니다.
+        # 계산 오류를 막기 위해 3일차 칸을 0으로 처리
         df['3일차_총타수'] = 0
         df['3일차_2타수'] = 0
         df['3일차_홀인원'] = 0
     else:
-        raise ValueError(f"'{sheet_name}' 시트의 형식이 맞지 않습니다. 표준 엑셀 서식을 사용해 주세요.")
+        raise ValueError(f"'{sheet_name}' 시트의 형식이 맞지 않습니다.")
         
     df = df.dropna(subset=['이름', '소속'])
     
-    # 3. 숫자형 데이터로 완벽하게 변환 (빈칸은 0 처리)
+    # 숫자형 데이터 변환 (빈칸은 0 처리)
     num_cols = [
         '1일차_총타수', '1일차_2타수', '1일차_홀인원', 
         '2일차_총타수', '2일차_2타수', '2일차_홀인원', 
@@ -74,7 +72,7 @@ if uploaded_file is not None:
             with tab1:
                 df_ind = load_and_standardize_data(uploaded_file, '개인전 채점표')
 
-                # 데이터 자동 보정 (빈칸이 있더라도 1+2+3일차를 알아서 합산)
+                # [안전 처리] 코드 잘림 방지를 위한 줄바꿈
                 df_ind['최종_총타수'] = np.where(
                     df_ind['최종_총타수'] == 0, 
                     df_ind['1일차_총타수'] + df_ind['2일차_총타수'] + df_ind['3일차_총타수'], 
@@ -93,9 +91,15 @@ if uploaded_file is not None:
 
                 df_ind = df_ind[df_ind['최종_총타수'] > 0].copy()
                 
-                # 순위 계산
-                df_ind = df_ind.sort_values(by=['최종_총타수', '최종_2타수', '최종_홀인원'], ascending=[True, False, False]).reset_index(drop=True)
-                df_ind['순위'] = df_ind[['최종_총타수', '최종_2타수', '최종_홀인원']].apply(lambda x: (-x['최종_총타수'], x['최종_2타수'], x['최종_홀인원']), axis=1).rank(method='min', ascending=False).astype(int)
+                # [안전 처리] 순위 정렬 및 계산 줄바꿈
+                df_ind = df_ind.sort_values(
+                    by=['최종_총타수', '최종_2타수', '최종_홀인원'], 
+                    ascending=[True, False, False]
+                ).reset_index(drop=True)
+                
+                df_ind['순위'] = df_ind[['최종_총타수', '최종_2타수', '최종_홀인원']].apply(
+                    lambda x: (-x['최종_총타수'], x['최종_2타수'], x['최종_홀인원']), axis=1
+                ).rank(method='min', ascending=False).astype(int)
 
                 st.subheader("🥇 개인전 결과")
                 st.success("✅ 개인전 순위 집계가 완료되었습니다.")
@@ -113,7 +117,7 @@ if uploaded_file is not None:
             with tab2:
                 df_team_raw = load_and_standardize_data(uploaded_file, '단체전 채점표')
 
-                # 단체전 개인별 데이터 자동 보정
+                # [안전 처리] 코드 잘림 방지를 위한 줄바꿈
                 df_team_raw['최종_총타수'] = np.where(
                     df_team_raw['최종_총타수'] == 0, 
                     df_team_raw['1일차_총타수'] + df_team_raw['2일차_총타수'] + df_team_raw['3일차_총타수'], 
@@ -132,10 +136,17 @@ if uploaded_file is not None:
                 
                 df_team_raw = df_team_raw[df_team_raw['최종_총타수'] > 0].copy()
 
-                # 단체전 팀별 점수 합산 및 순위 계산
                 df_team = df_team_raw.groupby('소속', as_index=False)[['최종_총타수', '최종_2타수', '최종_홀인원']].sum()
-                df_team = df_team.sort_values(by=['최종_총타수', '최종_2타수', '최종_홀인원'], ascending=[True, False, False]).reset_index(drop=True)
-                df_team['순위'] = df_team[['최종_총타수', '최종_2타수', '최종_홀인원']].apply(lambda x: (-x['최종_총타수'], x['최종_2타수'], x['최종_홀인원']), axis=1).rank(method='min', ascending=False).astype(int)
+                
+                # [안전 처리] 순위 정렬 및 계산 줄바꿈
+                df_team = df_team.sort_values(
+                    by=['최종_총타수', '최종_2타수', '최종_홀인원'], 
+                    ascending=[True, False, False]
+                ).reset_index(drop=True)
+                
+                df_team['순위'] = df_team[['최종_총타수', '최종_2타수', '최종_홀인원']].apply(
+                    lambda x: (-x['최종_총타수'], x['최종_2타수'], x['최종_홀인원']), axis=1
+                ).rank(method='min', ascending=False).astype(int)
 
                 st.subheader("🤝 단체전 결과")
                 st.success("✅ 단체전 팀별 점수 합산이 완료되었습니다.")
@@ -164,4 +175,8 @@ if uploaded_file is not None:
             )
 
     except Exception as e:
-        st.error(f"오류가 발생했습니다. 시트 이름('개인전 채점표', '단체전 채점표')과 열
+        # [안전 처리] 긴 에러 메시지도 줄바꿈 처리하여 잘림 방지
+        st.error(
+            f"오류가 발생했습니다. "
+            f"시트 이름('개인전 채점표', '단체전 채점표')과 열 구조를 확인해주세요: {e}"
+        )
